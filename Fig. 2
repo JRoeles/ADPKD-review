@@ -1,0 +1,155 @@
+# Fig. 2
+# Style elements such as theme() commands and some custom titles have been removed for better readability
+
+library(Seurat)
+library(dplyr)
+library(ggplot2)
+library(reshape2)
+library(UCell)
+library(ggpubr)
+
+pkd <- readRDS("~/PKD_Integrated_Final.rds")
+pkd.keep <- readRDS("~/PKD_Integrated_Final_keep.rds")
+pt <- readRDS("~/PT.Subset.rds")
+cd <- readRDS("~/CD.Subset.rds")
+
+# Fig 2A
+Fig1A <- DimPlot(pt, label=T, raster=T, group.by = "cluster.name", reduction = "umap.harmony", repel = T)  
+
+# Fig 2B
+cluster_condition <- pt@meta.data %>% group_by(cluster.name,Cyst.Type) %>% 
+  summarize(ncells =n()) %>% mutate(freq = round(ncells/sum(ncells),5))
+Fig2B <- 
+  ggplot(cluster_condition, aes(fill=Cyst.Type, y=freq, x=cluster.name)) + 
+  geom_bar(position="stack", stat="identity") + 
+  scale_y_continuous(expand = c(0,0.015))
+  
+# Fig 2C
+features <- c("LRP2", "CUBN", "VCAM1","NFKBIA","TNFRSF12A", "GADD45B", "CXCL1")
+Fig2C <- 
+  DotPlot(pt, features = features, group.by = "Cyst.Type",dot.scale = 25, scale = F, cols = c("lightgrey", "purple3")) +
+  ylab("Proximal Epithelial Cells") + 
+  coord_flip()
+
+# Figure 2D
+features = c("SLC2A3", "SLC2A2", "SLC2A1","LDHA","PFKM", "PKM","HK1")
+Fig2D <- 
+  DotPlot(pt, features = features, group.by = "Cyst.Type", dot.scale = 20, scale = F, cols = c("lightgrey", "purple3")) +
+  ylab("Proximal Epithelial Cells") +
+  coord_flip() 
+
+# Fig 2E
+Fig2E <- DimPlot(cd, label=T, raster=F, group.by = "cluster.name", reduction = "umap.harmony", repel = T) +  
+
+# Fig 2F: Cyst Type Representation per Cluster
+cluster_condition <- cd@meta.data %>% group_by(cluster.name,Cyst.Type) %>%
+  summarize(ncells =n()) %>% mutate(freq = round(ncells/sum(ncells),5))
+Fig2F <- 
+  ggplot(cluster_condition, aes(fill=Cyst.Type, y=freq, x=cluster.name)) + 
+  geom_bar(position="stack", stat="identity") + 
+  scale_y_continuous(expand = c(0,0.015))
+
+# Fig 2G
+features <- c("AQP2", "TNFRSF12A", "NFKBIA","GADD45B","CXCL2", "COL21A1", "ACTA2", "FBN1")
+Fig2G <- 
+  DotPlot(cd, features = features, group.by = "Cyst.Type", dot.scale = 25, scale = F, cols = c("lightgrey", "darkgreen")) +
+  coord_flip() +
+  ylab("Collecting Duct Epithelial Cells")
+
+# Fig. 2H
+feature <- c("SLC2A3", "SLC2A2", "SLC2A1","LDHA","PFKM", "PKM", "HK1")
+Fig2H <- 
+  DotPlot(cd, features = features, group.by = "Cyst.Type", dot.scale = 20, scale = F, cols = c("lightgrey", "darkgreen")) +
+  ylab("Collecting Duct Epithelial Cells") +
+  coord_flip() 
+
+# Fig 2 I-L
+glucose.metabolism <-  c( "SLC2A1", "SLC2A2", "SLC2A3", "SLC2A4",             # Cellular glucose import (GLUTs)
+                          "HK1", "PFKM", "PKM",                               # Glycolysis
+                          "NDUFA6", "SDHC", "UQCRB", "COX4I1", "ATP5F1B")     # Oxidative Phosphorylation
+
+fatty.acid.metabolism <- c( "CD36", "FABP1", "SLC27A2","CPT1A", "CPT2",                                                 # mitochondrial import 
+                            "ACADL", "ACADM", "ACADS", "ECH1","ECHS1", "EHHADH", "HADH",  "HADHA", "HADHB", "ECI1",     # beta-oxidation
+                            "NDUFA6", "SDHC", "UQCRB", "COX4I1", "ATP5F1B")                                             # Oxidative Phosphorylation
+
+signatures = list(glucose.metabolism = glucose.metabolism,
+                  fatty.acid.metabolism = fatty.acid.metabolism)
+
+ptcd <- subset(pkd.keep, subset = celltype %in% c("PT", "CD-PC"))
+ptcd.counts <- LayerData(ptcd, layer = "counts")
+
+meta <- ptcd@meta.data[c("orig.ident", "group", "Cyst.Type", "celltype")]
+meta$origin.celltype =NA
+meta[meta$celltype =="PT" & meta$Cyst.Type =="Control",]$origin.celltype = "PT_Control"
+meta[meta$celltype =="PT" & meta$Cyst.Type =="PT-like Cyst",]$origin.celltype = "PT-like CEC_PT-like Cyst"
+meta[meta$celltype =="PT" & meta$Cyst.Type =="Mixed Cyst",]$origin.celltype = "PT-like CEC_Mixed Cyst"
+meta[meta$celltype =="CD-PC" & meta$Cyst.Type =="Control",]$origin.celltype = "CD-PC_Control"
+meta[meta$celltype =="CD-PC" & meta$Cyst.Type =="CD-like Cyst",]$origin.celltype = "CD-like CEC_CD-like Cyst"
+meta[meta$celltype =="CD-PC" & meta$Cyst.Type =="Mixed Cyst",]$origin.celltype = "CD-like CEC_Mixed Cyst"
+
+score_ucell <- ScoreSignatures_UCell(ptcd.counts, features = signatures)
+colnames(score_ucell) <- c("Glucose.Score", "Fat.Score")
+score_ucell <- as.data.frame(score_ucell)
+score_ucell <- subset(score_ucell,  subset = Glucose.Score > 0 | Fat.Score > 0)
+
+score_ucell$energy.imb = NA
+score_ucell$energy.imb = (score_ucell$Glucose.Score - score_ucell$Fat.Score) / (score_ucell$Glucose.Score + score_ucell$Fat.Score)
+
+score_ucell$total.met.score = NA
+score_ucell$total.met.score = score_ucell$Glucose.Score + score_ucell$Fat.Score
+
+meta <- meta[rownames(meta) %in% rownames(score_ucell),]
+Score <- left_join(rownames_to_column(meta), rownames_to_column(score_ucell)) %>% column_to_rownames()
+Score$origin.celltype <- factor(Score$origin.celltype, levels = c("PT_Control", "PT-like CEC_PT-like Cyst", "PT-like CEC_Mixed Cyst","CD-PC_Control", "CD-like CEC_CD-like Cyst", "CD-like CEC_Mixed Cyst"))
+
+# Fig 2I
+cols <- 
+Fig2I <- 
+  Score[Score$celltype == "PT",] %>%
+  ggplot(aes(x=Glucose.Score , y=Fat.Score, color=origin.celltype)) +
+  geom_jitter(size = 2.5, alpha = 0.7) +
+  scale_color_manual(values = c("green3", "orange", "darkred"))+
+  scale_y_continuous(limits = c(-0.0001, 0.47)) +
+  scale_x_continuous(limits = c(-0.0001, 0.47)) +
+  geom_abline(intercept = 0, slope = 1, linewidth = 1.5, linetype = "dashed", color = "blue2") +
+  xlab("Glucose Score") + ylab("Fat Score")
+Fig2I <- ggMarginal(Fig2I, type = "boxplot", groupFill = T, groupColour = F)
+
+# Fig 2J: CD-PC Glucose/Fat Scores   
+Fig2J <- 
+  Score[Score$celltype == "CD-PC",] %>%
+  ggplot(aes(x=Glucose.Score , y=Fat.Score, color=origin.celltype)) +
+  geom_jitter(size = 2.5, alpha = 0.7) +
+  scale_color_manual(values = c("green3", "orange", "darkred"))+
+  scale_y_continuous(limits = c(-0.0001, 0.61)) +
+  scale_x_continuous(limits = c(-0.0001, 0.61)) +
+  geom_abline(intercept = 0, slope = 1, linewidth = 1.5,  linetype = "dashed", color = "blue2") +
+  xlab("Glucose Score") + ylab("Fat Score")  
+Fig2J <- ggMarginal(Fig2J, type = "boxplot", groupFill = T, groupColour = F)
+
+# Fig 2K
+Fig2K <- 
+  Score %>%
+  ggplot(aes(x=origin.celltype , y=energy.imb, color=origin.celltype)) +
+  scale_color_manual(values = ) + 
+  scale_fill_grey(start = 0.8, end = 0.2) +
+  geom_jitter(size = 3, alpha = 0.6, width = 0.45) +
+  geom_boxplot(aes(fill = origin.celltype), color = "black", linewidth =1, width =0.7, alpha=0.9) +
+  ylab("Energy Imbalance") +
+  geom_hline(yintercept = 0, color ="blue1", linewidth=1, linetype = "dashed") +
+  stat_compare_means(method = "wilox", label = "p.signif", label.y.npc = "bottom",
+                     comparisons = list(c(1,2),c(2,3),c(1,3),c(3,4),c(4,5),c(5,6),c(4,6)), 
+                     step.increase	= 0.06, size=12, vjust = 0.6, hide.ns = T) 
+
+# Fig 2L
+Fig2L <- 
+  Score %>%
+  ggplot(aes(x=origin.celltype, y=total.met.score)) +
+  scale_color_manual(values = c("green3", "orange", "darkred","green3", "orange", "darkred")) + 
+  scale_fill_grey(start = 0.8, end = 0.2) +      geom_jitter(aes(color = origin.celltype), alpha=0.9) +
+  geom_boxplot(aes(fill=origin.celltype), color="black") +
+  ylab("Total Score (Glucose + Fat)") +
+  stat_compare_means(method = "wilcox",
+                     label = "p.signif", step.increase = 0.06, tip.length = 0.01,
+                     comparisons = list(c(1,2),c(2,3),c(1,3),c(4,5),c(5,6),c(4,6)),
+                     size = 12, vjust = 0.6, hide.ns = T)
