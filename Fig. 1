@@ -1,0 +1,50 @@
+# Fig. 1
+# Style elements such as theme() commands and some custom titles have been removed for better readability
+library(Seurat)
+library(dplyr)
+library(ggplot2)
+library(reshape2)
+
+pkd <- readRDS("~/PKD_Integrated_Final.rds")
+pkd.keep <- readRDS("~/PKD_Integrated_Final_keep.rds")
+
+# Fig 1B
+p1 <- DimPlot(pkd, reduction = "umap.harmony", group.by = "celltype", label.size = 16, repel = T)
+p2 <- DimPlot(pkd, reduction = "umap.harmony", label = F, group.by = "group", raster =T, label.size = 14) 
+Fig1B <- p1|p2
+
+# Fig 1C
+celltype.levels <- c("Podo","PEC","PT","tL","TAL","DCT","CNT","CD-PC","IC-A","IC-B","Endo","Lymph","Adipo","Leuko","Fibro")
+group.levels <- c("Control", "PKD")
+
+df.cellnumber.pkd <- data.frame(row.names = unique(pkd.keep@meta.data$celltype))
+for (j in unique(pkd.keep@meta.data$group)) {
+  pkd.keep2 <- pkd.keep@meta.data[pkd.keep@meta.data$group == j,]$celltype %>% table %>% as.data.frame()
+  rownames(pkd.keep2) <- pkd.keep2$.
+  pkd.keep2$proportion <- pkd.keep2$Freq/(sum(pkd.keep2$Freq))*100
+  pkd.keep2$Freq = pkd.keep2$delete
+  colnames(pkd.keep2) <-  paste0(j, "_proportion")
+  df.cellnumber.pkd <- left_join(rownames_to_column(df.cellnumber.pkd), rownames_to_column(pkd.keep2)) %>% column_to_rownames()
+}
+df.cellnumber.pkd <-  df.cellnumber.pkd %>% t() %>% as.data.frame()
+df.cellnumber.pkd$sample = sub("_.*","", rownames(df.cellnumber.pkd))
+df.cellnumber.pkd.molten <- melt(df.cellnumber.pkd, id.vars = c("sample"), measure.vars = unique(pkd.keep@meta.data$celltype))
+df.cellnumber.pkd.molten$sample <- factor(df.cellnumber.pkd.molten$sample, levels = group.levels)
+df.cellnumber.pkd.molten$variable <- factor(df.cellnumber.pkd.molten$variable, levels = celltype.levels)
+
+Fig1C <- df.cellnumber.pkd.molten %>%
+  ggplot(aes(x=sample, y=value, fill=variable)) +
+  geom_bar(position="stack", stat="identity", alpha =1, color = "black") +
+  ylab("% Sequenced Cells")
+
+# Fig 1E 
+p7z4 <- readRDS("~/P7Z4_final.rds")
+p8z2 <- readRDS("~/P8Z2_final.rds")
+p9z1 <- readRDS("~PP9Z1_final.rds")
+
+p1 <- FeaturePlot(p8z2, features = c("LRP2", "AQP2"), order =T, ncol = 1)
+p2 <- FeaturePlot(p7z4, features = c("LRP2", "AQP2"), order =T, ncol = 1) 
+p3 <- FeaturePlot(p9z1, features = c("LRP2", "AQP2"), order =T, ncol = 1)
+
+Fig1E <- (p1|p2|p3) &
+  scale_color_gradient(limits = c(0,5), low = "grey85", high = "deepskyblue4")
