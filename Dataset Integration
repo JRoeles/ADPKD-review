@@ -1,0 +1,69 @@
+# Description
+# This R script generates the integrated dataset pkd from individual cyst and control datasets
+# Seurat v5 was used (see vignette https://satijalab.org/seurat/articles/seurat5_integration)
+
+library(Seurat)
+library(tidyverse)
+library(harmony)
+
+## load cyst and control seurat objects and merge 
+p5z2 <- readRDS("~/P5Z2_final.rds")
+p5z4 <- readRDS("~/P5Z4_final.rds")
+p5z5 <- readRDS("~/P5Z5_final.rds")
+p6z1 <- readRDS("~/P6Z1_final.rds")
+p6z3 <- readRDS("~/P6Z3_final.rds")
+p6z4 <- readRDS("~/P6Z4_final.rds")
+p7z2 <- readRDS("~/P7Z2_final.rds")
+p7z3 <- readRDS("~/P7Z3_final.rds")
+p7z4 <- readRDS("~/P7Z4_final.rds")
+p8z2 <- readRDS("~/P8Z2_final.rds")
+p8z3 <- readRDS("~/P8Z3_final.rds")
+p8z4 <- readRDS("~/P8Z4_final.rds")
+p9z1 <- readRDS("~/P9Z1_final.rds")
+p9z3 <- readRDS("~/P9Z3_final.rds")
+p9z4 <- readRDS("~/P9Z4_final.rds")
+control <- readRDS("~/control_final.rds")
+
+cyst.list <- list(p5z2,p5z4,p5z5,p6z1,p6z3,p6z4,p7z2,p7z3,p7z4,p8z2,p8z3,p8z4,p9z1,p9z3,p9z4, control)
+rm(p5z2,p5z4,p5z5,p6z1,p6z3,p6z4,p7z2,p7z3,p7z4,p8z2,p8z3,p8z4,p9z1,p9z3,p9z4, control)
+names(cyst.list) <- c("p5z2","p5z4","p5z5","p6z1","p6z3","p6z4","p7z2","p7z3","p7z4","p8z2","p8z3","p8z4","p9z1","p9z3","p9z4", "control")
+
+pkd <- merge(x=cyst.list[[1]], y=cyst.list[2:length(cyst.list)], merge.data =T)
+pkd@meta.data <- pkd@meta.data[c("orig.ident", "nCount_RNA", "nFeature_RNA", "group", "celltype")]
+rm(cyst.list)
+
+## harmony integration, dimensionality reduction and clustering
+pkd[["RNA"]] <- split(pkd[["RNA"]], f = pkd$orig.ident)
+pkd <- NormalizeData(pkd)
+pkd <- FindVariableFeatures(pkd)
+pkd <- ScaleData(pkd)
+pkd <- RunPCA(pkd)
+
+set.seed(1)
+pkd <- IntegrateLayers(
+  object = pkd, method = HarmonyIntegration,
+  orig.reduction = "pca", new.reduction = "harmony")
+
+pkd <- FindNeighbors(pkd, reduction = "harmony", dims = 1:50)
+pkd <- FindClusters(pkd, resolution = c(0.5, 0.8), cluster.name = c("clusters.harmony.res0.5","clusters.harmony.res0.8"))
+pkd <- RunUMAP(pkd, reduction = "harmony", dims = 1:50, reduction.name = "umap.harmony")
+pkd <- RunTSNE(pkd, reduction = "harmony", dims = 1:50, reduction.name = "tsne.harmony")
+pkd <- JoinLayers(pkd)
+
+## calculate percent.mt, percent.ribo, cellcycle.score 
+pkd[["percent.mt"]] <- PercentageFeatureSet(pkd, pattern = "^MT-")
+pkd[["percent.ribo"]] <- PercentageFeatureSet(pkd, pattern = "^RP[SL][[:digit:]]|^RPLP[[:digit:]]|^RPSA")
+pkd <- CellCycleScoring(pkd, assay = "RNA", s.features = cc.genes$s.genes, g2m.features = cc.genes$g2m.genes)
+
+## add clinical metadata
+clin.metadata <- read_csv('~/Clinical_metadata.csv')  
+pkd@meta.data <- left_join(rownames_to_column(pkd@meta.data), clin.metadata, by="orig.ident") %>% column_to_rownames()
+
+saveRDS(pkd, "PKD_Integrated_Final.rds")
+
+## remove low quality samples for downstream analysis
+idents.keep <- setdiff(unique(pkd@meta.data$orig.ident), c("P9Z3", "P5Z5", "P5Z4"))
+pkd.keep <- subset(pkd, subset = orig.ident %in% idents.keep )  # remove samples of low sequencing quality
+
+saveRDS(pkd, "PKD_Integrated_Final_keep.rds")
+
