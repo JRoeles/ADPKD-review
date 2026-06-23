@@ -1,0 +1,191 @@
+# Fig. 3
+# Style elements such as theme() commands and some custom titles have been removed for better readability
+
+library(Seurat)
+library(dplyr)
+library(ggplot2)
+library(UCell)
+library(ggpubr)
+library(viridis)
+
+pkd <- readRDS("~/PKD_Integrated_Final.rds")
+pkd.keep <- readRDS("~/PKD_Integrated_Final_keep.rds")
+pt <- readRDS("~/PT.Subset.rds")
+cd <- readRDS("~/CD.Subset.rds")
+leuk <- readRDS("~/Leuk.Subset.rds")
+fibro <- readRDS("~/Fibro.Subset.rds")
+endo <- readRDS("~/Endo.Subset.rds")
+
+cyst.levels <- c("Control", "CD-like Cyst", "PT-like Cyst", "Mixed Cyst")
+
+# Fig 3A
+Fig3A <- DimPlot(leuk, group.by = "cluster.name", reduction= "umap.harmony", label = T, repel=T) 
+
+# Fig 3C
+immune.levels <- c("B", "Plasma","T/NK","Myeloid 1", "Myeloid 2", "Myeloid 3", "Myeloid 4","Myeloid 5", "Baso/Mast", "Prolif")
+cluster.count_immune.ct <- leuk@meta.data %>% count(Cyst.Type, cluster.name)
+cluster.count_immune.ct$Cyst.Type <- factor(cluster.count_immune.ct$Cyst.Type, levels = cyst.levels)
+cluster.count_immune.ct$cluster.name <- factor(cluster.count_immune.ct$cluster.name, levels = immune.levels)
+
+Fig3C <- 
+  cluster.count_immune.ct %>%
+  ggplot(aes(x = Cyst.Type, y = n, fill = cluster.name)) +
+  geom_bar(position = "fill", stat = "identity") +
+  ylab("% Cells") + xlab("Tissue Type")
+
+# Figure 3D
+Fig3D <- DotPlot(leuk, features = "CCL2", group.by = "cluster.name",  scale = F, dot.scale = 20, cols = c("grey80", "black"))
+
+#Fig 3E
+Fig3E <- DimPlot(fibro, group.by = "cluster.name", reduction= "umap.harmony", label = T, repel=T) 
+
+# Fig 3F
+cluster.count_fibro.celltype <- fibro@meta.data %>% dplyr::count(cluster.name, Cyst.Type)
+cluster.count_fibro.celltype$Cyst.Type <- factor(cluster.count_fibro.celltype$Cyst.Type, levels = cyst.levels)
+
+p1 <-
+  cluster.count_fibro.celltype %>%
+  ggplot(aes(x = cluster.name, y=n, fill=Cyst.Type)) + 
+  geom_bar(position="fill", stat="identity") + 
+  ylab("% Cells") + guides(fill = guide_legend("Tissue Type")) +
+  theme(plot.title = element_text(size = 45), 
+        axis.title.y = element_text(size=45), axis.title.x = element_blank(),
+        axis.text.x = element_text(size=45, angle =90), axis.text.y = element_text(size=40),
+        legend.title = element_text(size = 35, face = "bold"), legend.text = element_text(size=35), 
+        legend.position = "right", legend.justification.right = "top", legend.key.spacing.y = unit(0.3, "cm")) +
+  scale_fill_manual(values = cols_cyst.type) +
+  scale_y_continuous(labels = c(0,25,50,75,100))
+
+#Fig 3G
+alpha = 0.25
+bar.size = 15
+tip.length = 0.01
+bracket.size = 0.3
+label.size= 8
+vjust=1.4
+method = "wilcox"
+comparisons <- list(c(1,2),c(2,3),c(3,4),c(4,5),c(5,6),c(6,7),c(7,8),c(8,9),c(9,10))
+
+p1 <- VlnPlot(fibro, group.by = "cluster.name", features = c("COL1A1"), alpha = alpha) + ylab("COL1A1") + theme(axis.text.x = element_blank()) +
+  stat_summary(fun.y = mean, geom='point', size = bar.size, colour = "black", shape = 95) +
+  stat_compare_means(comparisons = comparisons, label = "p.signif", label.y = 6.25, tip.length = tip.length, bracket.size = bracket.size, size=label.size, vjust = vjust, method = method) 
+p2 <- VlnPlot(fibro, group.by = "cluster.name", features = c("COL4A3"), alpha = alpha) + ylab("COL4A3") + theme(axis.text.x = element_blank()) +
+  stat_summary(fun.y = mean, geom='point', size = bar.size, colour = "black", shape = 95) +
+  stat_compare_means(comparisons = comparisons, label = "p.signif", label.y = 3.65, tip.length = tip.length, bracket.size = bracket.size, size=label.size, vjust = vjust, method = method) 
+p3 <- VlnPlot(fibro, group.by = "cluster.name", features = c("COL4A4"), alpha = alpha) + ylab("COL4A4") + theme(axis.text.x = element_blank()) +
+  stat_summary(fun.y = mean, geom='point', size = bar.size, colour = "black", shape = 95) +
+  stat_compare_means(comparisons = comparisons, label = "p.signif", label.y = 3.87, tip.length = tip.length, bracket.size = bracket.size, size=label.size, vjust = vjust, method = method) 
+p4 <- VlnPlot(fibro, group.by = "cluster.name", features = c("ACTA2"), alpha = alpha) +  ylab("ACTA2") + theme(axis.text.x = element_blank()) +
+  stat_summary(fun.y = mean, geom='point', size = bar.size, colour = "black", shape = 95) +
+  stat_compare_means(comparisons = comparisons, label = "p.signif", label.y = 5.96, tip.length = tip.length, bracket.size = bracket.size, size=label.size, vjust = vjust, method = method) 
+p5 <- VlnPlot(fibro, group.by = "cluster.name", features = c("NOTCH3"),alpha = alpha) + ylab("NOTCH3") + theme(axis.text.x = element_blank()) +
+  stat_summary(fun.y = mean, geom='point', size = bar.size, colour = "black", shape = 95) +
+  stat_compare_means(comparisons = comparisons, label = "p.signif", label.y = 3.65, tip.length = tip.length, bracket.size = bracket.size, size=label.size, vjust = vjust, method = method) 
+p6 <- VlnPlot(fibro, group.by = "cluster.name", features = c("IL6"),alpha = alpha) +  ylab("IL6") + theme(axis.text.x = element_blank()) +
+  stat_summary(fun.y = mean, geom='point', size = bar.size, colour = "black", shape = 95) +
+  stat_compare_means(comparisons = comparisons, label = "p.signif", label.y = 4.62, tip.length = tip.length, bracket.size = bracket.size, size=label.size, vjust = vjust, method = method)
+p7 <- VlnPlot(fibro, group.by = "cluster.name", features = c("CCL2"),alpha = alpha) +  ylab("CCL2") + theme(axis.text.x = element_text(size=35)) +
+  stat_summary(fun.y = mean, geom='point', size = bar.size, colour = "black", shape = 95) +
+  stat_compare_means(comparisons = comparisons, label = "p.signif", label.y = 6.389, tip.length = tip.length, bracket.size = bracket.size, size=label.size, vjust = vjust, method = method) 
+Fig3G <- p1/p2/p3/p4/p5/p6/p7 
+
+
+# Fig 3H
+a <- FeaturePlot(fibro, features = c("TNFRSF12A"), reduction = "umap", order = T)
+b <- FeaturePlot(fibro, features = c("NFKBIA"), reduction = "umap", order = T)
+c <- FeaturePlot(fibro, features = c("IL6"), reduction = "umap", order = T)
+d <- FeaturePlot(fibro, features = c("CCL2"), reduction = "umap", order = T)
+
+Fig3H <- ((a / b) | (c / d)) & 
+  scale_color_gradient(limits = c(0,5), low = "grey90", high = "deepskyblue4") &
+  theme(plot.title = element_text(size=45), axis.title = element_blank(), axis.text =element_blank(), axis.ticks = element_blank(),
+        legend.text = element_text(size=20),legend.position = "inside", legend.position.inside = c(0.9,0.9), 
+        legend.justification.right = "top")
+
+# Fig 3I
+fibro.counts <- LayerData(fibro, layer = "counts")
+collagens.kuppe <- c("COL1A1", "COL1A2", "COL3A1", "COL4A1", "COL4A2", "COL4A3", "COL4A4", "COL4A5","COL4A6", 
+                     "COL5A1", "COL5A2", "COL5A3", "COL6A1","COL6A2", "COL6A3", "COL7A1", "COL8A1", "COL8A2", 
+                     "COL9A2", "COL9A3", "COL10A1", "COL11A2", "COL12A1", "COL13A1", "COL14A1", "COL15A1", "COL16A1", 
+                     "COL17A1", "COL18A1", "COL19A1", "COL21A1", "COL22A1", "COL23A1", "COL24A1", "COL25A1", "COL26A1", 
+                     "COL27A1", "COL28A1")
+proteoglycans.kuppe <- c("CHADL", "ESM1", "HSPG2", "IMPG2", "PRG2", "SRGN", "ACAN", "BGN", "HAPLN2", "HAPLN3", "ASPN", "DCN", 
+                         "FMOD", "LUM", "OGN",  "OMD", "PODN", "PODNL1", "PREPL", "VCAN", "PRG4", "SPOCK1", "SPOCK2")
+gylcoproteins.kuppe <- c("BMPER", "CRELD1", "CRELD2", "CRIM1", "EMID1", "EYS", "FN1", "GAS6", "HMCN2", "IGFBP4", "IGFBP5", "IGFBP7", "LAMA5", 
+                         "LAMB2", "LAMC1", "LRG1", "LTBP3", "MFAP1", "MFAP2", "MFAP3", "MMRN2", "NID2", "NTN4", "NTN5", "NTNG2", "POMZP3", "PXDN", 
+                         "SNED1", "SPARC", "SPARCL1", "SSPO", "TINAGL1", "TNXB", "VWA1", "VWCE",
+                         "VWF", "ZP3", "AGRN", "COLQ", "CRISPLD1", "EMILIN2", "FBN2", "FGB", "FGG", "FGL2", "FRAS1", "KCP", "LAMA1", "LAMA3", "LAMB1", "LAMB3", "LAMB4", "LAMC2", "MXRA5",
+                         "NELL2", "NOV", "PAPLN", "SPP1", "TECTA", "TGFBI", "TINAG", "VWA5A", "VWA7", "VWDE", "BGLAP", "FBN3", "IGFALS", "IGFBP1", "LGI1", "NELL1", "NTN1", "SLIT1",
+                         "VWA5B1", "ABI3BP", "AEBP1", "CILP", "COMP", "CRISPLD2", "CTGF", "CTHRC1", "CYR61", "DPT", "ECM1", "ECM2", "EFEMP1", "EFEMP2", "ELN", "EMILIN1",
+                         "FBLN1", "FBLN5", "FBLN7", "FBN1", "FNDC1", "IGFBP3",  "IGFBP6", "IGSF10", "LAMA2", "LAMC3", "LTBP1", "LTBP2", "LTBP4", "MATN3", "MFAP2", "MFAP4",
+                         "MFGE8", "MGP", "NID1", "PCOLCE", "POSTN", "RSPO3", "SLIT3", "SMOC2", "SPON1", "SPON2", "SRPX2", "SVEP1", "THBS1", "THBS2", "THBS3", "THBS4", "THSD4", 
+                         "TNC", "TSKU", "VTN", "WISP1", "EDIL3", "IGFBP2", "NDNF", "NPNT", "NTNG1", "PCOLCE2", "SBSPON", "SMOC1", "WISP3", "COCH", "EGFLAM", "FBLN2", "GLDN",
+                         "HMCN1", "LAMA4", "LGI2", "LGI4", "MATN2", "MATN4", "MMRN1", "RELN", "SRPX", "TNFAIP6", "WISP2")
+
+ecm.genes.kuppe <- list(c(collagens.kuppe, proteoglycans.kuppe,gylcoproteins.kuppe),collagens.kuppe, proteoglycans.kuppe,gylcoproteins.kuppe)
+
+score_ucell <- ScoreSignatures_UCell(fibro.counts, features =ecm.genes.kuppe) 
+score_ucell <- score_ucell %>% as.data.frame()
+colnames(score_ucell)= c("Total ECM", "Collagens", "Proteoglycans", "Glycoproteins")
+fibro@meta.data <- left_join(rownames_to_column(fibro@meta.data), rownames_to_column(score_ucell)) %>% column_to_rownames()
+
+Fig3I <-
+  FeaturePlot(fibro, reduction = "umap.harmony", features = "Total ECM", order = T) + scale_color_viridis(option = "H") +
+  ggtitle("ECM Score (Kuppe et al., 2021)")
+
+# Fig 3J
+fibro.counts.avg <- AggregateExpression(fibro, group.by = "cluster.name") 
+fibro.counts.avg <- fibro.counts.avg %>% as.data.frame() %>% as.matrix()
+score_ucell.avg <- ScoreSignatures_UCell(fibro.counts.avg, features = ecm.genes.kuppe) 
+score_ucell.avg <- score_ucell.avg %>% as.data.frame()
+rownames(score_ucell.avg) <- sub("RNA.","",rownames(score_ucell.avg))
+colnames(score_ucell.avg)= c("ECM", "Collagens", "Proteoglycans", "Glycoproteins")
+
+Fig3J <- pheatmap(score_ucell.avg, cluster_cols = F, cluster_rows = F, scale = "column",
+               fontsize = 28, fontsize_col = 35, fontsize_row = 35, angle_col = 45, gaps_col = c(1), 
+               main = "ECM Score (Kuppe et al., 2021)")
+
+# Fig 3K
+Fig3K <- DimPlot(endo, group.by = "cluster.name", reduction= "umap.harmony", label = T, repel=T) + 
+
+# Fig 3L
+cluster.count_endo<- endo@meta.data %>% count(Cyst.Type, cluster.name)
+cluster.count_endo$Cyst.Type <- factor(cluster.count_endo$Cyst.Type, levels = cyst.levels)
+
+Fig3L <- 
+  cluster.count_endo %>%
+  ggplot(aes(x = cluster.name, y=n, fill=Cyst.Type)) + 
+  geom_bar(position="fill", stat="identity") + 
+  ylab("% Cells") + guides(fill = guide_legend("Tissue Type")) 
+
+# Fig 3M
+features = c("ICAM1", "VCAM1", "SELE", "SELP", "IL6", "CCL2")
+Fig3M <- FeaturePlot(endo, features = features, reduction = "umap.harmony", order =T, raster =F, ncol =3, pt.size = 0.3) &
+        scale_color_gradient(limits = c(0,5), low = "grey85", high = "firebrick4") 
+
+# Figure 3N
+features = c("ICAM1", "VCAM1", "SELE", "SELP", "IL6", "CCL2")
+Fig3N <- 
+  DotPlot(endo, features = features, group.by = "Cyst.Type", scale = F, dot.scale = 20, cols = c("grey80", "black")) +
+  ylab("Tissue Type") +
+  scale_y_discrete(limits=rev) +
+  scale_x_discrete(position = "top")
+
+# Figure 3O
+features = "CCL2"
+p.leuk <-  
+  DotPlot(leuk, features = features, group.by = c("Cyst.Type"), scale = F, dot.scale = 25, scale.min = 0, scale.max = 40) + ggtitle("Immune Cells") 
+p.fibro <-  
+  DotPlot(fibro, features = features, group.by = c("Cyst.Type"), scale = F, dot.scale = 25, scale.min = 0, scale.max = 40) + ggtitle("Fibroblasts") 
+p.endo <-  
+  DotPlot(endo, features = features, group.by = c("Cyst.Type"), scale = F, dot.scale = 25, scale.min = 0, scale.max = 40) + ggtitle("Endothelial Cells") 
+p.pt <-  
+  DotPlot(pt, features = features, group.by = c("Cyst.Type"), scale = F, dot.scale = 25, scale.min = 0, scale.max = 40) + ggtitle("Proximal EC") 
+p.cd <- 
+  DotPlot(cd, features = features, group.by = c("Cyst.Type"), scale = F, dot.scale = 25, scale.min = 0, scale.max = 40) + ggtitle("Collecting Duct EC") 
+Fig3O <- 
+  (p.leuk | p.fibro | p.endo | p.pt | p.cd) &
+  scale_y_discrete(limits=rev) &
+  scale_x_discrete(position = "top") &
+  scale_colour_gradient(low = "grey80", high="black")
+
