@@ -1,0 +1,148 @@
+
+library(Seurat)
+library(dplyr)
+library(ggplot2)
+library(ggpubr)
+library(patchwork)
+
+#### FIG. 4 ####
+
+# Gene Sets
+Idents(pkd) <- pkd@meta.data$celltype
+
+ROS.genes <- c("NDUFA6","SDHC", "UQCRB", "COX4I1", "ATP5F1B")
+defense.genes <- c("NFE2L2","SOD1", "NQO1")
+adcy.genes <- c("ADCY2","ADCY6", "ADCY8")
+pde.genes <- c("PDE1A","PDE1C","PDE3A")
+abcc.genes <- c("ABCC4","ABCC5")
+solute.water.genes <- c("CFTR", "AVPR2")
+
+genes.list <- list(ROS.genes = ROS.genes,
+                   defense.genes = defense.genes,
+                   adcy.genes = adcy.genes, 
+                   pde.genes = pde.genes, 
+                   abcc.genes = abcc.genes,
+                   solute.water.genes = solute.water.genes)
+
+background.pt <- annotate("rect", xmin = 0, xmax = 3.5, ymin = 0, ymax = 6.5, alpha = .08, fill="mediumorchid") 
+background.cd <- annotate("rect", xmin = 3.5, xmax = 7, ymin = 0, ymax = 6.5, alpha = .08, fill="green4") 
+
+theme_fig4 <- 
+  theme(plot.title = element_text(size=35, face="bold", margin = margin(b=50)), 
+        axis.text.x = element_text(size=18, angle=90), 
+        axis.text.y = element_text(size=18), 
+        axis.title.x = element_blank(), 
+        axis.title.y = element_text(size=17)) + 
+  NoLegend()
+
+plot.list <- list()
+
+for (i in names(genes.list)) {
+  
+  plot.list[[i]] <- 
+    VlnPlot(pkd, 
+            features = c(genes.list[[i]]), 
+            group.by = "celltype2_cyst.type", 
+            idents = c("PT","CD-PC"), 
+            log = T, 
+            ncol = length(genes.list[[i]]), 
+            alpha = 0.1, 
+            cols = c("lightblue3","mediumorchid","burlywood2","lightblue3","green4","burlywood2")) & 
+    stat_summary(fun = mean, 
+                 geom = 'bar', 
+                 position = position_dodge(width = 0.9), 
+                 alpha = 0.8) &
+    background.pt & 
+    background.cd &
+    theme_fig4
+}
+
+# Fig 4B ROS
+pdf("Fig 4B_ROS.pdf", width = 15, height = 7)
+print(plot.list[["ROS.genes"]])
+dev.off()
+
+# 4C ROS Response
+a <- plot.list[["defense.genes"]][[1]] + ggtitle("NRF2")
+b <- plot.list[["defense.genes"]][[2]] 
+c <- plot.list[["defense.genes"]][[3]]
+
+p <- a | b | c
+
+pdf("Fig 4C_defense.pdf", width = 9, height = 7)
+print(p)
+dev.off()
+
+# 4D-F ADCY / PDE / ABCC
+pdf("Fig 4D_ADCY.pdf", width = 10, height = 7)
+print(plot.list[["adcy.genes"]])
+dev.off()
+
+pdf("Fig 4E_PDE.pdf", width = 10, height = 7)
+print(plot.list[["pde.genes"]])
+dev.off()
+
+pdf("Fig 4F_ABCC.pdf", width = 6.7, height = 7)
+print(plot.list[["abcc.genes"]])
+dev.off()
+
+# 4D Solute Water
+pdf("Fig 4G_solute.water.pdf", width = 6.7, height = 7)
+print(plot.list[["solute.water.genes"]])
+dev.off()
+
+
+#### Adjusted p-values for Fig 4 genes in normalized counts matrix
+tmp <- LayerData(pkd, layer = "data") %>% t() %>% as.data.frame()
+
+fig4.genes <- c(ROS.genes, defense.genes, adcy.genes, pde.genes, abcc.genes, solute.water.genes)
+
+tmp <- tmp[,fig4.genes]
+tmp <- left_join(rownames_to_column(tmp), rownames_to_column(pkd@meta.data)) %>% column_to_rownames()
+tmp <- dplyr::filter(tmp, celltype %in% c("PT", "CD-PC"))
+
+# Stats bewteen celltype2_cyst.type
+stat.test1 <- tibble()
+
+my_comparisons1 <- list(
+  c("PT_Control", "PT-like CECs_PT-like Cyst"), 
+  c("PT-like CECs_PT-like Cyst", "PT-like CECs_Mixed Cyst"), 
+  c("PT_Control","PT-like CECs_Mixed Cyst"),
+  c("CD-PC_Control", "CD-like CECs_CD-like Cyst"), 
+  c("CD-like CECs_CD-like Cyst", "CD-like CECs_Mixed Cyst"), 
+  c("CD-PC_Control","CD-like CECs_Mixed Cyst"))
+
+for (i in fig4.genes) {
+  f <- as.formula(paste(i, "~ celltype2_cyst.type"))
+  
+  df <- wilcox_test(tmp, 
+                    formula = f, 
+                    paired = FALSE, 
+                    comparisons = my_comparisons1, 
+                    p.adjust.method = "bonferroni")
+  
+  stat.test1 <- rbind(stat.test1, df)
+}
+
+# Stats between celltype2
+stat.test2 <- tibble()
+
+my_comparisons2 <- list(c("PT-like CECs", "CD-like CECs"))
+
+for (i in fig4.genes) {
+  f <- as.formula(paste(i, "~ celltype2"))
+  
+  df <- tmp %>%
+    wilcox_test(formula = f, 
+                paired = FALSE, 
+                comparisons = my_comparisons2, 
+                p.adjust.method = "bonferroni")
+  stat.test2 <- rbind(stat.test2, df)
+}
+
+stat.test <- rbind(stat.test1, stat.test2)
+stat.test <- arrange(stat.test, .y.)
+stat.test <- dplyr::rename(stat.test, Gene = .y.)
+
+write_csv2(stat.test, "Fig.4_stat.tests.csv")
+
