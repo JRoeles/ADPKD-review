@@ -1,0 +1,123 @@
+# Description
+# This R script creates cell type subsets for proximal epithelial cells, collecting duct cells, immune cells, fibroblasts, and endothelial cells
+
+library(Seurat) 
+library(tidyverse)
+library(harmony)
+
+pkd <- readRDS('/Users/johannesroeles/Library/CloudStorage/OneDrive-Persönlich/0_0_ADPKD/0_ADPKD_Reintegration and Analysis_JR/A_PKD_Integration_Final/PKD_Integrated_Final.rds')
+idents.keep <- setdiff(unique(pkd@meta.data$orig.ident), c("P9Z3", "P5Z5", "P5Z4"))     # remove low quality datasets for downstream analysis
+pkd <- subset(pkd, subset = orig.ident %in% idents.keep)
+Idents(pkd) <- pkd@meta.data$celltype
+
+subset.list <- list()
+for (i in c("PT","CD-PC", "Fibro", "Endo")) {
+  tmp <- subset(pkd, idents = i)
+  tmp@meta.data <- tmp@meta.data[colnames(tmp@meta.data)[grepl("clusters", colnames(tmp@meta.data))== F]]  # remove previous clustering metadata
+  
+  tmp[["RNA"]] <- split(tmp[["RNA"]], f = tmp$orig.ident)
+  DefaultAssay(tmp) <- "RNA"
+  tmp <- NormalizeData(tmp)
+  tmp <- FindVariableFeatures(tmp)
+  tmp <- ScaleData(tmp, vars.to.regress = c( "percent.mt"))
+  tmp <- RunPCA(tmp)
+  
+  set.seed(1)
+  tmp <- IntegrateLayers(
+    object = tmp, method = HarmonyIntegration, 
+    orig.reduction = "pca", new.reduction = "harmony")
+  tmp <- FindNeighbors(tmp, reduction = "harmony", dims = 1:50)
+  tmp <- FindClusters(tmp, resolution = c(0.05, 0.1, 0.5), 
+                      cluster.name = c("clusters.harmony.res0.05","clusters.harmony.res0.1", "clusters.harmony.res0.5"))
+  tmp <- RunUMAP(tmp, reduction = "harmony", dims = 1:50, reduction.name = "umap.harmony")
+  tmp <- JoinLayers(tmp)
+  subset.list[[i]] <- tmp
+}
+
+for (i in c("Leuko")) {
+  tmp <- subset(pkd, idents = i)
+  tmp@meta.data <- tmp@meta.data[colnames(tmp@meta.data)[grepl("clusters", colnames(tmp@meta.data))== F]]  # remove previous clustering metadata
+  
+  tmp[["RNA"]] <- split(tmp[["RNA"]], f = tmp$orig.ident)
+  DefaultAssay(tmp) <- "RNA"
+  tmp <- NormalizeData(tmp)
+  tmp <- FindVariableFeatures(tmp)
+  tmp <- ScaleData(tmp, vars.to.regress = c( "percent.mt"), features = rownames(tmp))
+  tmp <- RunPCA(tmp)
+  
+  set.seed(1)
+  tmp <- IntegrateLayers(
+    object = tmp, method = HarmonyIntegration, 
+    orig.reduction = "pca", new.reduction = "harmony")
+  tmp <- FindNeighbors(tmp, reduction = "harmony", dims = 1:50)
+  tmp <- FindClusters(tmp, resolution = c(0.05,0.1, 0.5), cluster.name = c("clusters.harmony.res0.05","clusters.harmony.res0.1","clusters.harmony.res0.5"))
+  tmp <- RunUMAP(tmp, reduction = "harmony", dims = 1:50, reduction.name = "umap.harmony")
+  tmp <- JoinLayers(tmp)
+  subset.list[[i]] <- tmp
+}
+
+pt <- subset.list[["PT"]]
+cd <- subset.list[["CD-PC"]]
+endo <- subset.list[["Endo"]]
+leuk <- subset.list[["Leuko"]]
+fibro <- subset.list[["Fibro"]]
+
+# add names for subclusters
+# PT
+Idents(pt) <- pt@meta.data$clusters.harmony.res0.1
+pt@meta.data$cluster.name = NA
+pt@meta.data[pt@meta.data$clusters.harmony.res0.1 == "0",]$cluster.name = "Clust1"
+pt@meta.data[pt@meta.data$clusters.harmony.res0.1 == "1",]$cluster.name = "Clust2"
+pt@meta.data[pt@meta.data$clusters.harmony.res0.1 == "2",]$cluster.name = "Healthy"
+pt@meta.data[pt@meta.data$clusters.harmony.res0.1 == "3",]$cluster.name = "FR"
+pt@meta.data[pt@meta.data$clusters.harmony.res0.1 == "4",]$cluster.name = "Prolif"
+pt@meta.data$cluster.name <- factor(pt@meta.data$cluster.name, levels = c("Healthy", "FR", "Clust1", "Clust2", "Prolif"))
+
+# CD-PC
+Idents(cd) <- cd@meta.data$clusters.harmony.res0.05 
+cd@meta.data$cluster.name = NA
+cd@meta.data[cd@meta.data$clusters.harmony.res0.05 == 0,]$cluster.name = "Clust1"
+cd@meta.data[cd@meta.data$clusters.harmony.res0.05 == 1,]$cluster.name = "Clust2"
+cd@meta.data[cd@meta.data$clusters.harmony.res0.05 == 2,]$cluster.name = "Prolif"
+cd@meta.data$cluster.name <- factor(cd@meta.data$cluster.name, levels = c("Clust1","Clust2","Prolif"))
+
+# Leuko
+leuk@meta.data$cluster.name=NA
+leuk@meta.data[leuk@meta.data$clusters.harmony.res0.3 == 0,]$cluster.name ="Myeloid 5"
+leuk@meta.data[leuk@meta.data$clusters.harmony.res0.3 == 1,]$cluster.name ="T/NK"
+leuk@meta.data[leuk@meta.data$clusters.harmony.res0.3 == 2,]$cluster.name ="Myeloid 3"
+leuk@meta.data[leuk@meta.data$clusters.harmony.res0.3 == 3,]$cluster.name ="Myeloid 1"
+leuk@meta.data[leuk@meta.data$clusters.harmony.res0.3 == 4,]$cluster.name ="Myeloid 2"
+leuk@meta.data[leuk@meta.data$clusters.harmony.res0.3 == 5,]$cluster.name ="Myeloid 4"
+leuk@meta.data[leuk@meta.data$clusters.harmony.res0.3 == 6,]$cluster.name ="Baso/Mast"
+leuk@meta.data[leuk@meta.data$clusters.harmony.res0.3 == 7,]$cluster.name ="T/NK"
+leuk@meta.data[leuk@meta.data$clusters.harmony.res0.3 == 8,]$cluster.name ="B"
+leuk@meta.data[leuk@meta.data$clusters.harmony.res0.3 == 9,]$cluster.name ="Prolif"
+leuk@meta.data[leuk@meta.data$clusters.harmony.res0.3 == 10,]$cluster.name ="Plasma"
+levels = c("B", "Plasma","T/NK","Myeloid 1", "Myeloid 2", "Myeloid 3", "Myeloid 4","Myeloid 5", "Baso/Mast", "Prolif")
+leuk@meta.data$cluster.name <- factor(leuk@meta.data$cluster.name, levels = levels)
+
+# Fibro
+fibro@meta.data$cluster.name = NA
+fibro@meta.data[fibro@meta.data$clusters.harmony.res0.3 == 0,]$cluster.name = "Fib-1"
+fibro@meta.data[fibro@meta.data$clusters.harmony.res0.3 == 1,]$cluster.name = "Fib-2"
+fibro@meta.data[fibro@meta.data$clusters.harmony.res0.3 == 2,]$cluster.name = "Fib-3"
+fibro@meta.data[fibro@meta.data$clusters.harmony.res0.3 == 3,]$cluster.name = "Myo"
+fibro@meta.data[fibro@meta.data$clusters.harmony.res0.3 == 4,]$cluster.name = "Fib-4"
+fibro@meta.data[fibro@meta.data$clusters.harmony.res0.3 == 5,]$cluster.name = "Fib-5"
+fibro@meta.data[fibro@meta.data$clusters.harmony.res0.3 == 6,]$cluster.name = "Inflam"
+fibro@meta.data[fibro@meta.data$clusters.harmony.res0.3 == 7,]$cluster.name = "Fib-6"
+fibro@meta.data[fibro@meta.data$clusters.harmony.res0.3 == 8,]$cluster.name = "Peri"
+fibro@meta.data[fibro@meta.data$clusters.harmony.res0.3 == 9,]$cluster.name = "Fib-7"
+
+# Endo
+endo@meta.data$cluster.name=NA
+endo@meta.data[endo@meta.data$clusters.harmony.res0.1 == 0,]$cluster.name = "EC1"
+endo@meta.data[endo@meta.data$clusters.harmony.res0.1 == 1,]$cluster.name = "Dmg1"
+endo@meta.data[endo@meta.data$clusters.harmony.res0.1 == 2,]$cluster.name = "EC2/DVR"
+endo@meta.data[endo@meta.data$clusters.harmony.res0.1 == 3,]$cluster.name = "EC3"
+endo@meta.data[endo@meta.data$clusters.harmony.res0.1 == 4,]$cluster.name = "Dmg2"
+endo@meta.data[endo@meta.data$clusters.harmony.res0.1 == 5,]$cluster.name = "Glom"
+endo@meta.data$cluster.name <- factor(endo@meta.data$cluster.name, levels = c("EC1", "EC2/DVR","EC3","Dmg1","Dmg2", "Glom"))
+
+
