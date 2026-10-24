@@ -1,0 +1,245 @@
+rm(list = ls())
+
+library(lme4)
+library(pbkrtest)
+library(ggplot2)
+library(dplyr)
+library(ggrepel)
+library(Seurat)
+library(patchwork)
+
+d <- read.csv2('data_JR.csv')
+
+d %>%
+  group_by(Patient.name) %>%
+  summarise(
+    min_t = min(t, na.rm = TRUE),
+    max_t = max(t, na.rm = TRUE),
+    .groups = "drop")
+
+d$t_post <- pmax(d$t, 0)
+
+#define predictorx
+vari = "area_AQP2.exp_pct"                            # All cysts harboring AQP2+ cells are considered
+d$aqp2_c <- as.numeric(scale(d$area_AQP2.exp_pct))
+d$aqp2 <- as.numeric(d$area_AQP2.exp_pct)
+
+# Make results list per vari
+results_list <- list()
+
+d$aqp2_c <- as.numeric(scale(d[[vari]]))
+d$aqp2 <- as.numeric(d[[vari]])
+
+d <- d[order(d$aqp2, d$Patient.name, decreasing = T), ]
+unique(d$aqp2)
+
+d$Patient.name <- factor(d$Patient.name, levels = unique(d$Patient.name))
+d$patient = d$Patient.name
+
+# Build full model
+m_full <- lmer(
+  egfr ~ t + t_post + aqp2_c
+  + t:aqp2_c + t_post:aqp2_c
+  + (1 + t | patient),
+  data = d, REML = FALSE
+)
+summary(m_full)
+isSingular(m_full)
+
+#tests
+m_red <- update(m_full, . ~ . - t_post:aqp2_c)
+anova(m_red, m_full)                       
+
+set.seed(1)
+pb_change <- PBmodcomp(m_full, m_red, nsim = 2000)
+pb_change$test["PBtest", "p.value"]
+fixef(m_full)["t_post:aqp2_c"]
+
+bootstrap_output = data_frame(predictor = vari ,p.value = pb_change$test["PBtest", "p.value"], fixed.effect = fixef(m_full)["t_post:aqp2_c"])
+
+results_list[["bootstrap.output.slope.change"]] <- as.data.frame(bootstrap_output)
+results_list[["bootstrap.output.slope.change"]]
+
+#test specificity
+m_red_pre <- update(m_full, . ~ . - t:aqp2_c)
+anova(m_red_pre, m_full)
+set.seed(1)
+
+pb_pre <- PBmodcomp(m_full, m_red_pre, nsim = 2000)
+pb_pre$test["PBtest", "p.value"]
+
+bootstrap_output_pre = data_frame(predictor = vari, p.value = pb_pre$test["PBtest", "p.value"])
+
+results_list[["bootstrap.output.pre-slope"]] <- as.data.frame(bootstrap_output_pre)
+results_list[["bootstrap.output.pre-slope"]]
+
+# Leave-one-out test
+patients <- levels(d$patient)
+res <- data.frame(patient_left_out = patients, lrt_p = NA_real_, estimate = NA_real_)
+
+for (p in patients) {
+  m  <- update(m_full, data = droplevels(subset(d, patient != p)))
+  mr <- update(m, . ~ . - t_post:aqp2_c)
+  
+  i <- match(p, patients)
+  res$lrt_p[i] <- anova(mr, m)$`Pr(>Chisq)`[2]
+  res$estimate[i] <- unname(fixef(m)["t_post:aqp2_c"])
+}
+
+results_list[["leave.one.out"]] <- as.data.frame(res)
+results_list[["leave.one.out"]] 
+
+# Individual slope change Figures
+library(ggplot2)
+library(dplyr)
+
+d$pat_label <- factor(d$patient,
+                      levels = levels(factor(d$patient)),
+                      labels = paste0("Patient P", seq_along(levels(factor(d$patient)))))
+d$period <- ifelse(d$t < 0, "pre", "post")
+
+  slopes <- do.call(rbind, lapply(split(d, d$pat_label), function(pt){
+    pre  <- coef(lm(egfr ~ t, data = subset(pt, t <  0)))["t"]
+    post <- coef(lm(egfr ~ t, data = subset(pt, t >= 0)))["t"]
+    data.frame(pat_label = pt$pat_label[1],
+               delta     = post - pre,          # Slope change
+               aqp2      = pt[[vari]][1])
+  }))
+  
+  
+  # Spearman Correlation analysis
+  ct <- cor.test(slopes$aqp2, slopes$delta, method = "spearman")
+  
+  fig2 = ggplot(slopes, aes(x = aqp2, y = delta, label = pat_label)) +
+    geom_hline(yintercept = 0, linetype = "dashed", colour = "grey60") +
+    geom_point(size = 3) +
+    ggrepel::geom_text_repel(size = 2) +
+    geom_smooth(method = "lm", se = TRUE, colour = "steelblue") +
+    labs(x = "Burden (%)",
+         y = "Slope change (during − pre, mL/min/1.73m²/year)") +
+    annotate("text", x = Inf, y = Inf, hjust = 2.6, vjust = 1.1,
+             label = sprintf("Spearman rho = %.2f, p = %.2f",
+                             ct$estimate, ct$p.value)) +
+    theme_minimal(base_size = 7) 
+
+  pdf(paste0("Slope.change_",vari,".pdf"), width = 4, height = 3)
+  print(fig2)
+  dev.off()
+
+# Figures
+library(ggplot2)
+library(viridis)
+library(patchwork)
+
+d2 <- unique(d[,c("aqp2","pat_label")])
+
+Fig.6G <- ggplot(d, aes(x = t, y = egfr)) +
+  geom_vline(xintercept = 0, linetype = "solid", colour = "black") +
+  geom_point(alpha = 0.5, size = 2, colour = "grey40") +
+  geom_smooth(aes(colour = aqp2, group = period), method = "lm", formula = y ~ x, se = FALSE, linewidth = 3, fullrange = F) +
+   geom_smooth(aes(colour = aqp2, group = period), colour = "grey20", method = "lm", formula = y ~ x, se = FALSE, linewidth = 0.8, fullrange = TRUE, linetype = "11") +
+  scale_colour_viridis_c(name = "AQP2 burden (%)",
+                         limits = c(40, 60),
+                         oob = scales::squish,
+                         breaks = c(40, 50, 60),
+                         labels = c("40", "50", "≥60")
+                        ) +
+  scale_x_continuous(breaks = function(limits) unique(round(pretty(limits)))) +
+  facet_wrap(~ pat_label, scales = "free", ncol = 3) +
+  labs(x = "Years from tolvaptan initiation", y = "eGFR") +
+  theme_minimal(base_size = 22) +
+  theme(panel.grid.minor = element_blank(), legend.position = "inside", legend.justification.inside = c(0.95,0.05), 
+        legend.title = element_text(size=20),
+        strip.text = element_text(face = "bold"), axis.title = element_text(face ="bold"))
+
+Fig.6G
+
+# Primary axis range
+y_min <- min(d$aqp2, na.rm = TRUE)  -2
+y_max <- max(d$aqp2, na.rm = TRUE)  +2
+
+stopifnot(is.finite(y_min), is.finite(y_max), y_max > y_min)
+
+# Map secondary-axis values nto the primary axis
+y_mid <- (y_min + y_max) / 2
+slope_scale <- (y_max - y_min) / 12
+
+patient_order <- if (is.factor(d2$pat_label)) {levels(d2$pat_label)} else {unique(as.character(d2$pat_label))}
+
+d2$x_pos <- match(as.character(d2$pat_label), patient_order)
+slopes$x_pos <- match(as.character(slopes$pat_label), patient_order)
+
+# Make Figures
+Fig.6H <- ggplot() +
+  geom_rect(
+    data = slopes,
+    aes(
+      xmin = x_pos - 0.35,
+      xmax = x_pos + 0.35,
+      ymin = pmin(y_mid, y_mid + slope_scale * delta),
+      ymax = pmax(y_mid, y_mid + slope_scale * delta),
+      fill = aqp2
+    ),
+    alpha = 0.4
+  ) +
+  geom_hline(
+    yintercept = y_mid,
+    colour = "grey50",
+    linetype = "dashed"
+  ) +
+  geom_line(
+    data = d2,
+    aes(x = x_pos, y = aqp2, group = 1),
+    colour = "grey50"
+  ) +
+  geom_point(
+    data = d2,
+    aes(x = x_pos, y = aqp2, colour = aqp2),
+    size = 4
+  ) +
+  scale_y_continuous(
+    name = "AQP2 burden (%)",
+    breaks = scales::breaks_pretty(n = 6),
+    sec.axis = sec_axis(
+      ~ (. - y_mid) / slope_scale,
+      name = "Slope change\n(during − pre, mL/min/1.73m²/year)",
+      breaks = seq(-6, 6, 2)
+    )
+  ) +
+  scale_x_continuous(
+    breaks = seq_along(patient_order),
+    labels = paste0("P", seq_along(patient_order))
+  ) +
+  coord_cartesian(ylim = c(y_min, y_max), expand = FALSE) +
+  scale_color_viridis_c(
+    name = "AQP2 burden (%)",
+    aesthetics = c("colour", "fill"),
+    oob = scales::squish,
+    limits = c(40, 60),
+    breaks = c(40, 50, 60),
+    labels = c("40", "50", "≥60")
+  ) +
+  labs(x = "Patient") +
+  theme_minimal(base_size = 25) +
+  theme(
+    panel.grid.minor = element_blank(),
+    panel.grid.major.x = element_blank(),
+    axis.title.x = element_text(face = "bold", color = "black"),
+    axis.title.y = element_text(face = "bold", color = "black"),
+    axis.text.x = element_text(face = "bold"),
+    axis.ticks.x = element_blank(),
+    legend.position = "none"
+  )
+
+Fig.6H
+
+pdf(paste0("Fig.6G_Indiv_Slopes", vari, ".pdf"), width = 10, height = 10)
+print(Fig.6G)
+dev.off()
+
+pdf(paste0("Fig.6H_Slope_Change", vari, ".pdf"), width = 10, height = 10)
+print(Fig.6H)
+dev.off()
+
+
+
