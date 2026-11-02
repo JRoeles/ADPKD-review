@@ -5,119 +5,165 @@ library(Seurat)
 library(tidyverse)
 library(harmony)
 
-pkd <- readRDS('/Users/johannesroeles/Library/CloudStorage/OneDrive-Persönlich/0_0_ADPKD/0_ADPKD_Reintegration and Analysis_JR/A_PKD_Integration_Final/PKD_Integrated_Final.rds')
-idents.keep <- setdiff(unique(pkd@meta.data$orig.ident), c("P9Z3", "P5Z5", "P5Z4"))     # remove low quality datasets for downstream analysis
+set.seed(1)
+
+cyst.levels = c("Control", "PT-like Cyst", "CD-like Cyst", "Mixed Cyst")
+
+pkd <- readRDS("/PKD_Integrated_Final.rds")
+idents.keep <- setdiff(unique(pkd@meta.data$orig.ident), c("P9Z3", "P5Z5", "P5Z4"))     # remove orig.idents of low quality for downstram analysis
 pkd <- subset(pkd, subset = orig.ident %in% idents.keep)
 Idents(pkd) <- pkd@meta.data$celltype
+
+seeds <- data.frame(celltype = c("PT","CD-PC", "Fibro", "Endo", "Leuko", "PTCD"), seed = c(3,1,2,1,6,1))
 
 subset.list <- list()
 for (i in c("PT","CD-PC", "Fibro", "Endo")) {
   tmp <- subset(pkd, idents = i)
   tmp@meta.data <- tmp@meta.data[colnames(tmp@meta.data)[grepl("clusters", colnames(tmp@meta.data))== F]]  # remove previous clustering metadata
-  
-  tmp[["RNA"]] <- split(tmp[["RNA"]], f = tmp$orig.ident)
+
+  tmp[["RNA"]] <- split(tmp[["RNA"]], f = tmp$patient)
   DefaultAssay(tmp) <- "RNA"
-  tmp <- NormalizeData(tmp)
-  tmp <- FindVariableFeatures(tmp)
-  tmp <- ScaleData(tmp, vars.to.regress = c( "percent.mt"))
-  tmp <- RunPCA(tmp)
-  
-  set.seed(1)
-  tmp <- IntegrateLayers(
-    object = tmp, method = HarmonyIntegration, 
-    orig.reduction = "pca", new.reduction = "harmony")
-  tmp <- FindNeighbors(tmp, reduction = "harmony", dims = 1:50)
-  tmp <- FindClusters(tmp, resolution = c(0.05, 0.1, 0.5), 
-                      cluster.name = c("clusters.harmony.res0.05","clusters.harmony.res0.1", "clusters.harmony.res0.5"))
-  tmp <- RunUMAP(tmp, reduction = "harmony", dims = 1:50, reduction.name = "umap.harmony")
+  tmp <- NormalizeData(tmp, verbose = F)
+  tmp <- FindVariableFeatures(tmp, verbose = T, nfeatures = 2000)
+  tmp <- ScaleData(tmp, verbose = T, vars.to.regress = c("nCount_RNA","percent.mt"))
+  tmp <- RunPCA(tmp, verbose = F)
+  set.seed(seeds[seeds$celltype == i,]$seed)
+  tmp <- IntegrateLayers(object = tmp, method = HarmonyIntegration, orig.reduction = "pca", new.reduction = "harmony", verbose = TRUE)
+  tmp <- FindNeighbors(tmp, reduction = "harmony", dims = 1:15)
+  tmp <- FindClusters(tmp, resolution = c(0.05,0.1, 0.2, 0.3, 0.5, 0.8, 1))
+  tmp <- RunUMAP(tmp, reduction = "harmony", dims = 1:15)
   tmp <- JoinLayers(tmp)
+  
+  tmp@meta.data$Cyst.Type <- factor(tmp@meta.data$Cyst.Type, levels = cyst.levels)
+
   subset.list[[i]] <- tmp
 }
 
 for (i in c("Leuko")) {
-  tmp <- subset(pkd, idents = i)
+  tmp <- subset(pkd, idents = "Leuko")
   tmp@meta.data <- tmp@meta.data[colnames(tmp@meta.data)[grepl("clusters", colnames(tmp@meta.data))== F]]  # remove previous clustering metadata
   
-  tmp[["RNA"]] <- split(tmp[["RNA"]], f = tmp$orig.ident)
+  tmp[["RNA"]] <- split(tmp[["RNA"]], f = tmp$patient)
   DefaultAssay(tmp) <- "RNA"
-  tmp <- NormalizeData(tmp)
-  tmp <- FindVariableFeatures(tmp)
-  tmp <- ScaleData(tmp, vars.to.regress = c( "percent.mt"), features = rownames(tmp))
-  tmp <- RunPCA(tmp)
-  
-  set.seed(1)
-  tmp <- IntegrateLayers(
-    object = tmp, method = HarmonyIntegration, 
-    orig.reduction = "pca", new.reduction = "harmony")
-  tmp <- FindNeighbors(tmp, reduction = "harmony", dims = 1:50)
-  tmp <- FindClusters(tmp, resolution = c(0.05,0.1, 0.5), cluster.name = c("clusters.harmony.res0.05","clusters.harmony.res0.1","clusters.harmony.res0.5"))
-  tmp <- RunUMAP(tmp, reduction = "harmony", dims = 1:50, reduction.name = "umap.harmony")
+  tmp <- NormalizeData(tmp, verbose = F)
+  tmp <- FindVariableFeatures(tmp, verbose = T, nfeatures = 2000)
+  tmp <- ScaleData(tmp, verbose = T, vars.to.regress = c("percent.mt"), features = rownames(tmp)) # scale all features
+  tmp <- RunPCA(tmp, verbose = F)
+  set.seed(seeds[seeds$celltype == i,]$seed)
+  tmp <- IntegrateLayers(object = tmp, method = HarmonyIntegration, orig.reduction = "pca", new.reduction = "harmony", verbose = TRUE)
+  tmp <- FindNeighbors(tmp, reduction = "harmony", dims = 1:30)
+  tmp <- FindClusters(tmp, resolution = c(0.05,0.1, 0.2, 0.3, 0.5, 0.8, 1, 1.5))
+  tmp <- RunUMAP(tmp, reduction = "harmony", dims = 1:30)
   tmp <- JoinLayers(tmp)
+  
+  tmp@meta.data$Cyst.Type <- factor(tmp@meta.data$Cyst.Type, levels = cyst.levels)
+
+  subset.list[[i]] <- tmp
+}
+
+for (i in c("PTCD")) {
+  tmp <- subset(pkd, subset = celltype %in% c("PT", "CD-PC"))
+  tmp@meta.data <- tmp@meta.data[colnames(tmp@meta.data)[grepl("clusters", colnames(tmp@meta.data))== F]]  # remove previous clustering metadata
+  
+  tmp[["RNA"]] <- split(tmp[["RNA"]], f = tmp$patient)
+  DefaultAssay(tmp) <- "RNA"
+  tmp <- NormalizeData(tmp, verbose = F)
+  tmp <- FindVariableFeatures(tmp, verbose = T, nfeatures = 2000)
+  tmp <- ScaleData(tmp, verbose = T, vars.to.regress = c("nCount_RNA","percent.mt")) 
+  tmp <- RunPCA(tmp, verbose = F)
+  tmp <- IntegrateLayers(object = tmp, method = HarmonyIntegration, orig.reduction = "pca", new.reduction = "harmony", verbose = TRUE)
+  tmp <- FindNeighbors(tmp, reduction = "harmony", dims = 1:dims)
+  tmp <- FindClusters(tmp, resolution = c(0.05,0.1, 0.2, 0.3, 0.5, 0.8, 1))
+  tmp <- RunUMAP(tmp, reduction = "harmony", dims = 1:dims)
+  tmp <- JoinLayers(tmp)
+  
+  tmp@meta.data$Cyst.Type <- factor(tmp@meta.data$Cyst.Type, levels = cyst.levels)
+  
   subset.list[[i]] <- tmp
 }
 
 pt <- subset.list[["PT"]]
 cd <- subset.list[["CD-PC"]]
 endo <- subset.list[["Endo"]]
-leuk <- subset.list[["Leuko"]]
 fibro <- subset.list[["Fibro"]]
+leuko <- subset.list[["Leuko"]]
+ptcd <- subset.list[["PTCD"]]
 
-# add names for subclusters
+saveRDS(subset.list, "0_Subset_List.rds")
+
+#### Add Cluster Names for cell type subclusters ####
 # PT
-Idents(pt) <- pt@meta.data$clusters.harmony.res0.1
+Idents(pt) <- pt@meta.data$RNA_snn_res.0.2
 pt@meta.data$cluster.name = NA
-pt@meta.data[pt@meta.data$clusters.harmony.res0.1 == "0",]$cluster.name = "Clust1"
-pt@meta.data[pt@meta.data$clusters.harmony.res0.1 == "1",]$cluster.name = "Clust2"
-pt@meta.data[pt@meta.data$clusters.harmony.res0.1 == "2",]$cluster.name = "Healthy"
-pt@meta.data[pt@meta.data$clusters.harmony.res0.1 == "3",]$cluster.name = "FR"
-pt@meta.data[pt@meta.data$clusters.harmony.res0.1 == "4",]$cluster.name = "Prolif"
-pt@meta.data$cluster.name <- factor(pt@meta.data$cluster.name, levels = c("Healthy", "FR", "Clust1", "Clust2", "Prolif"))
+pt@meta.data[pt@meta.data$RNA_snn_res.0.2 == "0",]$cluster.name = "Clust3"
+pt@meta.data[pt@meta.data$RNA_snn_res.0.2 == "1",]$cluster.name = "Clust1"
+pt@meta.data[pt@meta.data$RNA_snn_res.0.2 == "2",]$cluster.name = "Clust2"
+pt@meta.data[pt@meta.data$RNA_snn_res.0.2 == "3",]$cluster.name = "S1/S2"
+pt@meta.data[pt@meta.data$RNA_snn_res.0.2 == "4",]$cluster.name = "S2/S3"
+pt@meta.data[pt@meta.data$RNA_snn_res.0.2 == "5",]$cluster.name = "FR"
+pt@meta.data$cluster.name <- factor(pt@meta.data$cluster.name, levels = c("S1/S2", "S2/S3", "FR", "Clust1", "Clust2", "Clust3"))
+any(is.na(pt@meta.data$cluster.name))
+saveRDS(pt, "PT.Subset_new.rds")
 
 # CD-PC
-Idents(cd) <- cd@meta.data$clusters.harmony.res0.05 
+Idents(cd) <- cd@meta.data$RNA_snn_res.0.1
 cd@meta.data$cluster.name = NA
-cd@meta.data[cd@meta.data$clusters.harmony.res0.05 == 0,]$cluster.name = "Clust1"
-cd@meta.data[cd@meta.data$clusters.harmony.res0.05 == 1,]$cluster.name = "Clust2"
-cd@meta.data[cd@meta.data$clusters.harmony.res0.05 == 2,]$cluster.name = "Prolif"
-cd@meta.data$cluster.name <- factor(cd@meta.data$cluster.name, levels = c("Clust1","Clust2","Prolif"))
-
-# Leuko
-leuk@meta.data$cluster.name=NA
-leuk@meta.data[leuk@meta.data$clusters.harmony.res0.3 == 0,]$cluster.name ="Myeloid 5"
-leuk@meta.data[leuk@meta.data$clusters.harmony.res0.3 == 1,]$cluster.name ="T/NK"
-leuk@meta.data[leuk@meta.data$clusters.harmony.res0.3 == 2,]$cluster.name ="Myeloid 3"
-leuk@meta.data[leuk@meta.data$clusters.harmony.res0.3 == 3,]$cluster.name ="Myeloid 1"
-leuk@meta.data[leuk@meta.data$clusters.harmony.res0.3 == 4,]$cluster.name ="Myeloid 2"
-leuk@meta.data[leuk@meta.data$clusters.harmony.res0.3 == 5,]$cluster.name ="Myeloid 4"
-leuk@meta.data[leuk@meta.data$clusters.harmony.res0.3 == 6,]$cluster.name ="Baso/Mast"
-leuk@meta.data[leuk@meta.data$clusters.harmony.res0.3 == 7,]$cluster.name ="T/NK"
-leuk@meta.data[leuk@meta.data$clusters.harmony.res0.3 == 8,]$cluster.name ="B"
-leuk@meta.data[leuk@meta.data$clusters.harmony.res0.3 == 9,]$cluster.name ="Prolif"
-leuk@meta.data[leuk@meta.data$clusters.harmony.res0.3 == 10,]$cluster.name ="Plasma"
-levels = c("B", "Plasma","T/NK","Myeloid 1", "Myeloid 2", "Myeloid 3", "Myeloid 4","Myeloid 5", "Baso/Mast", "Prolif")
-leuk@meta.data$cluster.name <- factor(leuk@meta.data$cluster.name, levels = levels)
+cd@meta.data[cd@meta.data$RNA_snn_res.0.1 == 0,]$cluster.name = "Clust2"
+cd@meta.data[cd@meta.data$RNA_snn_res.0.1 == 1,]$cluster.name = "Injury1"
+cd@meta.data[cd@meta.data$RNA_snn_res.0.1 == 2,]$cluster.name = "Injury2"
+cd@meta.data[cd@meta.data$RNA_snn_res.0.1 == 3,]$cluster.name = "Clust1"
+cd@meta.data[cd@meta.data$RNA_snn_res.0.1 == 4,]$cluster.name = "Clust3"
+cd@meta.data$cluster.name <- factor(cd@meta.data$cluster.name, levels = c("Clust1","Clust2", "Clust3","Injury1", "Injury2"))
+any(is.na(cd@meta.data$cluster.name ))
+saveRDS(cd, "CD.Subset_new.rds")
 
 # Fibro
+Idents(fibro) <- fibro@meta.data$RNA_snn_res.0.3
 fibro@meta.data$cluster.name = NA
-fibro@meta.data[fibro@meta.data$clusters.harmony.res0.3 == 0,]$cluster.name = "Fib-1"
-fibro@meta.data[fibro@meta.data$clusters.harmony.res0.3 == 1,]$cluster.name = "Fib-2"
-fibro@meta.data[fibro@meta.data$clusters.harmony.res0.3 == 2,]$cluster.name = "Fib-3"
-fibro@meta.data[fibro@meta.data$clusters.harmony.res0.3 == 3,]$cluster.name = "Myo"
-fibro@meta.data[fibro@meta.data$clusters.harmony.res0.3 == 4,]$cluster.name = "Fib-4"
-fibro@meta.data[fibro@meta.data$clusters.harmony.res0.3 == 5,]$cluster.name = "Fib-5"
-fibro@meta.data[fibro@meta.data$clusters.harmony.res0.3 == 6,]$cluster.name = "Inflam"
-fibro@meta.data[fibro@meta.data$clusters.harmony.res0.3 == 7,]$cluster.name = "Fib-6"
-fibro@meta.data[fibro@meta.data$clusters.harmony.res0.3 == 8,]$cluster.name = "Peri"
-fibro@meta.data[fibro@meta.data$clusters.harmony.res0.3 == 9,]$cluster.name = "Fib-7"
+fibro@meta.data[fibro@meta.data$RNA_snn_res.0.3 == 0,]$cluster.name = "Fib-1"
+fibro@meta.data[fibro@meta.data$RNA_snn_res.0.3 == 1,]$cluster.name = "Fib-2"
+fibro@meta.data[fibro@meta.data$RNA_snn_res.0.3 == 2,]$cluster.name = "Fib-3"
+fibro@meta.data[fibro@meta.data$RNA_snn_res.0.3 == 3,]$cluster.name = "Myo"
+fibro@meta.data[fibro@meta.data$RNA_snn_res.0.3 == 4,]$cluster.name = "vSMC"
+fibro@meta.data[fibro@meta.data$RNA_snn_res.0.3 == 5,]$cluster.name = "Inflam"
+fibro@meta.data[fibro@meta.data$RNA_snn_res.0.3 == 6,]$cluster.name = "Fib-4"
+fibro@meta.data[fibro@meta.data$RNA_snn_res.0.3 == 7,]$cluster.name = "Peri"
+fibro@meta.data$cluster.name <- fibro@meta.data$cluster.name %>% factor(levels = c("Peri", "vSMC","Myo", "Fib-1", "Fib-2", "Fib-3", "Fib-4", "Inflam"))
+any(is.na(fibro@meta.data$cluster.name))
+saveRDS(fibro, "Fibro.Subset_new.rds")
 
 # Endo
-endo@meta.data$cluster.name=NA
-endo@meta.data[endo@meta.data$clusters.harmony.res0.1 == 0,]$cluster.name = "EC1"
-endo@meta.data[endo@meta.data$clusters.harmony.res0.1 == 1,]$cluster.name = "Dmg1"
-endo@meta.data[endo@meta.data$clusters.harmony.res0.1 == 2,]$cluster.name = "EC2/DVR"
-endo@meta.data[endo@meta.data$clusters.harmony.res0.1 == 3,]$cluster.name = "EC3"
-endo@meta.data[endo@meta.data$clusters.harmony.res0.1 == 4,]$cluster.name = "Dmg2"
-endo@meta.data[endo@meta.data$clusters.harmony.res0.1 == 5,]$cluster.name = "Glom"
-endo@meta.data$cluster.name <- factor(endo@meta.data$cluster.name, levels = c("EC1", "EC2/DVR","EC3","Dmg1","Dmg2", "Glom"))
+Idents(endo) <- endo@meta.data$RNA_snn_res.0.2
+endo@meta.data$cluster.name = NA
+endo@meta.data[endo@meta.data$RNA_snn_res.0.2 == 0,]$cluster.name = "EC-dmg"
+endo@meta.data[endo@meta.data$RNA_snn_res.0.2 == 1,]$cluster.name = "EC2"
+endo@meta.data[endo@meta.data$RNA_snn_res.0.2 == 2,]$cluster.name = "EC3"
+endo@meta.data[endo@meta.data$RNA_snn_res.0.2 == 3,]$cluster.name = "EC1"
+endo@meta.data[endo@meta.data$RNA_snn_res.0.2 == 4,]$cluster.name = "EC-art"
+endo@meta.data[endo@meta.data$RNA_snn_res.0.2 == 5,]$cluster.name = "EC-DVR"
+endo@meta.data[endo@meta.data$RNA_snn_res.0.2 == 6,]$cluster.name = "Glom-EC"
+endo@meta.data$cluster.name <- factor(endo@meta.data$cluster.name, levels = c("EC1", "EC2","EC3","EC-dmg", "EC-art", "EC-DVR","Glom-EC"))
+any(is.na(endo@meta.data$cluster.name))
+saveRDS(endo, "Endo.Subset_new.rds")
 
 
+# Leuko
+Idents(leuko) <- leuko@meta.data$RNA_snn_res.0.2
+leuko@meta.data$cluster.name = NA
+leuko@meta.data[leuko@meta.data$RNA_snn_res.0.2 == 0,]$cluster.name ="Myeloid 1"
+leuko@meta.data[leuko@meta.data$RNA_snn_res.0.2 == 1,]$cluster.name ="T/NK"
+leuko@meta.data[leuko@meta.data$RNA_snn_res.0.2 == 2,]$cluster.name ="Myeloid 2"
+leuko@meta.data[leuko@meta.data$RNA_snn_res.0.2 == 3,]$cluster.name ="Myeloid 3"
+leuko@meta.data[leuko@meta.data$RNA_snn_res.0.2 == 4,]$cluster.name ="Myeloid 4"
+leuko@meta.data[leuko@meta.data$RNA_snn_res.0.2 == 5,]$cluster.name ="T/NK"
+leuko@meta.data[leuko@meta.data$RNA_snn_res.0.2 == 6,]$cluster.name ="Mast"
+leuko@meta.data[leuko@meta.data$RNA_snn_res.0.2 == 7,]$cluster.name ="B"
+leuko@meta.data[leuko@meta.data$RNA_snn_res.0.2 == 8,]$cluster.name ="Plasma"
+
+levels = c("B", "Plasma","T/NK","Myeloid 1", "Myeloid 2", "Myeloid 3", "Myeloid 4", "Mast")
+leuko@meta.data$cluster.name <- factor(leuko@meta.data$cluster.name, levels = levels)
+any(is.na(leuko@meta.data$cluster.name))
+saveRDS(leuko, "Leuk.Subset_new.rds")
+
+# PTCD
+saveRDS(ptcd, "PTCD.Subset_new.rds")
